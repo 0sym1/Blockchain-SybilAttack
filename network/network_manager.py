@@ -43,6 +43,9 @@ class NetworkManager:
             port (int): Port number
             username (str): Tên người dùng
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
+        
         # Kiểm tra và xóa nodes cũ của cùng username hoặc cùng port
         nodes_to_remove = []
         for existing_id, existing_node in self.nodes.items():
@@ -76,6 +79,9 @@ class NetworkManager:
         Args:
             node_id (str): ID của node
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
+        
         if node_id in self.nodes:
             del self.nodes[node_id]
             self.save_network()
@@ -91,6 +97,8 @@ class NetworkManager:
         Returns:
             dict: Thông tin node
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
         return self.nodes.get(node_id)
     
     def get_all_nodes(self):
@@ -100,6 +108,8 @@ class NetworkManager:
         Returns:
             list: Danh sách nodes
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
         return list(self.nodes.values())
     
     def get_active_nodes(self):
@@ -109,6 +119,8 @@ class NetworkManager:
         Returns:
             list: Danh sách active nodes
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
         return [node for node in self.nodes.values() if node.get('is_active', True)]
     
     def get_random_nodes(self, count, exclude_ids=None):
@@ -140,6 +152,9 @@ class NetworkManager:
         Args:
             node_id (str): ID của node
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
+        
         if node_id in self.nodes:
             self.nodes[node_id]['is_active'] = False
             self.save_network()
@@ -151,6 +166,9 @@ class NetworkManager:
         Args:
             node_id (str): ID của node
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
+        
         if node_id in self.nodes:
             self.nodes[node_id]['is_active'] = True
             self.save_network()
@@ -162,10 +180,15 @@ class NetworkManager:
         Returns:
             int: Số lượng nodes
         """
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
         return len(self.nodes)
     
     def display_network(self):
         """Hiển thị thông tin mạng"""
+        # Reload từ file để đảm bảo dữ liệu mới nhất
+        self.nodes = self.load_network()
+        
         print("\n" + "="*80)
         print(f"NETWORK STATUS (Total Nodes: {self.get_network_size()})")
         print("="*80)

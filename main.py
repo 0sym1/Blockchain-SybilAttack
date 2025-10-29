@@ -108,10 +108,11 @@ class BlockchainSystem:
             print("  11. Connect to peers")
             print("  12. View network status")
             print("  13. Synchronize blockchain")
+            print("  14. Cleanup dead peers")
         
         print("\n⚔️ Attack Simulations:")
-        print("  14. Demonstrate Sybil Attack")
-        print("  15. Demonstrate Eclipse Attack")
+        print("  15. Demonstrate Sybil Attack")
+        print("  16. Demonstrate Eclipse Attack")
         
         print("\n  0. Exit")
         print("="*80)
@@ -390,6 +391,24 @@ class BlockchainSystem:
         else:
             print("✅ Your blockchain is up to date!")
     
+    def cleanup_dead_peers(self):
+        """Xóa các peers đã chết"""
+        if not self.current_node:
+            print("\n❌ Please login first!")
+            return
+        
+        print("\n🧹 Cleaning up dead peers...")
+        print(f"Current peers: {len(self.current_node.peers)}/{config.MAX_PEERS}")
+        
+        removed = self.current_node.cleanup_stale_peers()
+        
+        if removed > 0:
+            print(f"\n✅ Removed {removed} dead peer(s)")
+            print(f"💡 You now have {len(self.current_node.peers)}/{config.MAX_PEERS} active peers")
+            print(f"   {config.MAX_PEERS - len(self.current_node.peers)} slot(s) available for new connections")
+        else:
+            print("\n✅ All peers are healthy!")
+    
     def demonstrate_sybil_attack(self):
         """Demo Sybil attack"""
         print("\n⚠️ WARNING: This will create many nodes and may consume resources!")
@@ -477,8 +496,10 @@ class BlockchainSystem:
                 elif choice == '13':
                     self.synchronize_blockchain()
                 elif choice == '14':
-                    self.demonstrate_sybil_attack()
+                    self.cleanup_dead_peers()
                 elif choice == '15':
+                    self.demonstrate_sybil_attack()
+                elif choice == '16':
                     self.demonstrate_eclipse_attack()
                 else:
                     print("\n❌ Invalid choice! Please try again.")
