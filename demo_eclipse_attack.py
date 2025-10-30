@@ -455,6 +455,13 @@ class EclipseAttackDemo:
             blocks_needed = int((10 - confirmed) // config.MINING_REWARD + 1)
             print(f"   Need to mine {blocks_needed} block(s) for {blocks_needed * config.MINING_REWARD} coins")
             
+            # Debug: Check pending pool before mining
+            print(f"\n   🔍 Debug: Pending pool status BEFORE mining:")
+            print(f"      Pending transactions: {len(attacker.blockchain.pending_transactions)}")
+            if attacker.blockchain.pending_transactions:
+                for idx, tx in enumerate(attacker.blockchain.pending_transactions):
+                    print(f"         [{idx}] {tx}")
+            
             # Mine all needed blocks first
             for i in range(blocks_needed):
                 # Create dummy transaction for mining
@@ -465,10 +472,14 @@ class EclipseAttackDemo:
                 )
                 attacker.blockchain.add_transaction(dummy_tx)
                 
+                print(f"\n   🔍 Mining iteration {i+1}/{blocks_needed}:")
+                print(f"      Pool size before mine: {len(attacker.blockchain.pending_transactions)}")
+                
                 # Mine block
                 block = attacker.blockchain.mine_pending_transactions(attacker.username)
                 if block:
                     print(f"   ✓ Mined block #{len(attacker.blockchain.chain)-1} (+{config.MINING_REWARD} coins)")
+                    print(f"      Pool size after mine: {len(attacker.blockchain.pending_transactions)}")
             
             attacker_balance = attacker.blockchain.get_total_balance(attacker.username)
             confirmed, pending, total = attacker_balance
@@ -482,13 +493,21 @@ class EclipseAttackDemo:
                 chain_data = [block.to_dict() for block in attacker.blockchain.chain]
                 response = requests.post(
                     f"{target_url}/chain/replace",
-                    json={'chain': chain_data},
+                    json={
+                        'chain': chain_data,
+                        'length': len(chain_data),
+                        'force': True  # Force replace to ensure sync
+                    },
                     timeout=5
                 )
                 if response.status_code == 200:
+                    result = response.json()
                     print(f"   ✓ Target synced: {len(attacker.blockchain.chain)} blocks")
+                    print(f"      Old: {result.get('old_length', 0)} → New: {result.get('new_length', 0)}")
                 else:
+                    error_msg = response.json().get('error', 'Unknown') if response.headers.get('content-type') == 'application/json' else response.text
                     print(f"   ✗ Target sync failed (HTTP {response.status_code})")
+                    print(f"      Error: {error_msg}")
             except Exception as e:
                 print(f"   ✗ Target sync error: {str(e)}")
             
