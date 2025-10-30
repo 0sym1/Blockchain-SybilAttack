@@ -289,6 +289,12 @@ class BlockchainSystem:
             print(f"\n✅ Transaction created and broadcasted!")
             print(f"📤 {transaction}")
             print(f"\n💡 Transaction is pending. Mine a block to confirm it!")
+            
+            # Auto-save blockchain with pending transaction
+            print(f"💾 Saving blockchain...")
+            blockchain_data = self.current_node.blockchain.to_list()
+            self.user_manager.update_account(self.current_user, blockchain_data=blockchain_data)
+            print(f"✅ Blockchain saved!")
         except ValueError as e:
             print(f"\n❌ Transaction failed: {str(e)}")
     
@@ -315,6 +321,12 @@ class BlockchainSystem:
             print(f"\n✅ Block #{block.index} mined successfully!")
             print(f"💎 Hash: {block.hash}")
             print(f"🎁 Mining reward: {config.MINING_REWARD} coins")
+            
+            # Auto-save blockchain after mining
+            print(f"💾 Saving blockchain...")
+            blockchain_data = self.current_node.blockchain.to_list()
+            self.user_manager.update_account(self.current_user, blockchain_data=blockchain_data)
+            print(f"✅ Blockchain saved!")
     
     def check_balance(self):
         """Kiểm tra số dư"""
@@ -388,6 +400,11 @@ class BlockchainSystem:
         
         if replaced:
             print("✅ Blockchain updated with longer chain from peers!")
+            # Save the new blockchain
+            print(f"💾 Saving blockchain...")
+            blockchain_data = self.current_node.blockchain.to_list()
+            self.user_manager.update_account(self.current_user, blockchain_data=blockchain_data)
+            print(f"✅ Blockchain saved!")
         else:
             print("✅ Your blockchain is up to date!")
     

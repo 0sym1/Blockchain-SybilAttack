@@ -221,6 +221,18 @@ class EclipseAttackDemo:
                 if 0 <= idx < len(legitimate_nodes):
                     self.target_node = legitimate_nodes[idx]
                     print(f"\n✅ Target selected: {self.target_node.get('username')} @ http://{self.target_node['host']}:{self.target_node['port']}")
+                    
+                    # ✅ CRITICAL: Sync malicious nodes with target's blockchain
+                    print(f"\n🔄 Synchronizing malicious nodes with target's blockchain...")
+                    print(f"   This is REQUIRED for transactions to work!")
+                    
+                    if not self.sync_malicious_nodes_with_target():
+                        print(f"\n⚠️ Warning: Blockchain sync failed!")
+                        print(f"   Transactions may not work properly")
+                        confirm = input("Continue anyway? (yes/no): ").strip().lower()
+                        if confirm != 'yes':
+                            return False
+                    
                     return True
                 else:
                     print("❌ Invalid choice!")
@@ -229,6 +241,69 @@ class EclipseAttackDemo:
             except KeyboardInterrupt:
                 print("\n\n❌ Cancelled")
                 return False
+    
+    def sync_malicious_nodes_with_target(self):
+        """Sync all malicious nodes with target's blockchain"""
+        if not self.target_node or not self.malicious_nodes:
+            return False
+        
+        target_url = f"http://{self.target_node['host']}:{self.target_node['port']}"
+        
+        try:
+            # Get target's blockchain
+            print(f"\n   📥 Fetching target's blockchain...")
+            response = requests.get(f"{target_url}/chain", timeout=5)
+            
+            if response.status_code != 200:
+                print(f"   ✗ Failed to get target's chain (HTTP {response.status_code})")
+                return False
+            
+            target_chain_data = response.json()
+            target_chain = target_chain_data.get('chain', [])
+            
+            if not target_chain:
+                print(f"   ✗ Target chain is empty!")
+                return False
+            
+            print(f"   ✓ Target chain: {len(target_chain)} blocks")
+            
+            # Reconstruct target's blockchain
+            from core.block import Block
+            reconstructed_chain = []
+            for block_data in target_chain:
+                reconstructed_chain.append(Block.from_dict(block_data))
+            
+            # Sync all malicious nodes
+            print(f"\n   🔄 Syncing {len(self.malicious_nodes)} malicious node(s)...")
+            synced_count = 0
+            
+            for mal_node in self.malicious_nodes:
+                try:
+                    # Replace malicious node's chain with target's chain
+                    mal_node.blockchain.chain = [block for block in reconstructed_chain]
+                    mal_node.blockchain.pending_transactions = []
+                    
+                    print(f"   ✓ {mal_node.username}: Adopted target's blockchain ({len(reconstructed_chain)} blocks)")
+                    synced_count += 1
+                    
+                except Exception as e:
+                    print(f"   ✗ {mal_node.username}: Sync failed - {str(e)}")
+            
+            if synced_count == 0:
+                print(f"\n   ✗ No nodes synced successfully!")
+                return False
+            
+            print(f"\n   ✅ Consensus achieved: {synced_count}/{len(self.malicious_nodes)} node(s) synced")
+            print(f"   ✅ All nodes now have identical blockchain!")
+            print(f"   ✅ Transactions will work properly")
+            
+            return True
+            
+        except Exception as e:
+            print(f"   ✗ Sync failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return False
     
     def isolate_target(self):
         """Step 4: Isolate target node"""
@@ -366,22 +441,69 @@ class EclipseAttackDemo:
         print(f"\n💀 Attack Setup:")
         print(f"   Attacker: {attacker.username}")
         print(f"   Victim (Target): {target_username}")
-        print(f"   Amount: 50 coins")
+        print(f"   Amount: 10 coins")
         
         # Check attacker balance
         attacker_balance = attacker.blockchain.get_total_balance(attacker.username)
         confirmed, pending, total = attacker_balance
         print(f"\n💰 Attacker balance: {confirmed} coins (confirmed)")
         
-        if confirmed < 50:
+        if confirmed < 10:
             print(f"⚠️ Attacker has insufficient funds!")
-            print(f"   Adding 50 coins for demonstration...")
-            # Mine some blocks to get funds
-            for i in range(2):
-                attacker.blockchain.mine_pending_transactions(attacker.username)
+            print(f"   ⛏️ Mining blocks to get funds...")
+            
+            blocks_needed = int((10 - confirmed) // config.MINING_REWARD + 1)
+            print(f"   Need to mine {blocks_needed} block(s) for {blocks_needed * config.MINING_REWARD} coins")
+            
+            # Mine all needed blocks first
+            for i in range(blocks_needed):
+                # Create dummy transaction for mining
+                dummy_tx = Transaction(
+                    sender="System",
+                    receiver=attacker.username,
+                    amount=0
+                )
+                attacker.blockchain.add_transaction(dummy_tx)
+                
+                # Mine block
+                block = attacker.blockchain.mine_pending_transactions(attacker.username)
+                if block:
+                    print(f"   ✓ Mined block #{len(attacker.blockchain.chain)-1} (+{config.MINING_REWARD} coins)")
+            
             attacker_balance = attacker.blockchain.get_total_balance(attacker.username)
             confirmed, pending, total = attacker_balance
-            print(f"   New balance: {confirmed} coins")
+            print(f"   ✓ New balance: {confirmed} coins")
+            
+            # Now sync the entire chain to all nodes (target + other malicious nodes)
+            print(f"\n   🔄 Syncing new blockchain to all nodes...")
+            
+            # Sync to target
+            try:
+                chain_data = [block.to_dict() for block in attacker.blockchain.chain]
+                response = requests.post(
+                    f"{target_url}/chain/replace",
+                    json={'chain': chain_data},
+                    timeout=5
+                )
+                if response.status_code == 200:
+                    print(f"   ✓ Target synced: {len(attacker.blockchain.chain)} blocks")
+                else:
+                    print(f"   ✗ Target sync failed (HTTP {response.status_code})")
+            except Exception as e:
+                print(f"   ✗ Target sync error: {str(e)}")
+            
+            # Sync to other malicious nodes
+            synced_count = 0
+            for mal_node in self.malicious_nodes[1:]:
+                try:
+                    mal_node.blockchain.chain = [block for block in attacker.blockchain.chain]
+                    mal_node.blockchain.pending_transactions = []
+                    synced_count += 1
+                except:
+                    pass
+            
+            print(f"   ✓ Synced {synced_count} other malicious node(s)")
+            print(f"   ✅ Consensus maintained: All nodes have identical blockchain")
         
         # Get target's initial balance
         try:
@@ -398,112 +520,46 @@ class EclipseAttackDemo:
         print("PHASE 1: Send coins to TARGET (Eclipse network)")
         print("="*80)
         
-        # IMPORTANT: Sync blockchain first so target knows attacker's balance!
-        print(f"\n🔄 Synchronizing blockchain for consensus...")
-        print(f"   Both nodes need the SAME blockchain to transact")
-        
-        sync_success = False
-        
-        try:
-            # Get target's current chain
-            response = requests.get(f"{target_url}/chain", timeout=2)
-            if response.status_code == 200:
-                target_chain_data = response.json()
-                target_chain_length = len(target_chain_data.get('chain', []))
-                print(f"   📊 Target chain length: {target_chain_length} blocks")
-            else:
-                target_chain_length = 0
-                target_chain_data = None
-            
-            # Get attacker's chain
-            attacker_chain_length = len(attacker.blockchain.chain)
-            print(f"   📊 Attacker chain length: {attacker_chain_length} blocks")
-            
-            # STRATEGY: Use target's chain as common baseline
-            # (Target is already established in network, so use its chain)
-            if target_chain_data and target_chain_length > 0:
-                print(f"\n   🎯 Using target's chain as baseline for consensus...")
-                
-                # Reconstruct target's chain
-                from core.block import Block
-                target_chain = []
-                for block_data in target_chain_data.get('chain', []):
-                    target_chain.append(Block.from_dict(block_data))
-                
-                # Replace attacker's chain with target's chain (CONSENSUS!)
-                attacker.blockchain.chain = target_chain.copy()
-                attacker.blockchain.pending_transactions = []
-                print(f"   ✓ Attacker adopted target's blockchain ({target_chain_length} blocks)")
-                print(f"   ✓ CONSENSUS ACHIEVED: Both have identical chains!")
-                
-                sync_success = True
-            else:
-                print(f"   ⚠️ Could not get target's chain")
-                
-        except Exception as e:
-            print(f"   ⚠️ Blockchain sync failed: {str(e)}")
-        
-        if not sync_success:
-            print(f"\n   ⚠️ Blockchain sync was not successful")
-            print(f"   ⚠️ Transaction may fail due to inconsistent chains")
-        
-        time.sleep(1)
-        
-        # Check attacker's balance after sync
-        attacker_balance = attacker.blockchain.get_total_balance(attacker.username)
-        confirmed, pending, total = attacker_balance
-        print(f"\n💰 Attacker's current balance: {confirmed} coins (confirmed)")
-        
-        # If not enough balance, mine blocks
-        if confirmed < 50:
-            print(f"   ⚠️ Insufficient balance for transaction!")
-            print(f"   ⛏️ Mining blocks to get funds...")
-            
-            blocks_needed = int((50 - confirmed) // config.MINING_REWARD + 1)
-            print(f"   Need to mine {blocks_needed} block(s) for {blocks_needed * config.MINING_REWARD} coins")
-            
-            for i in range(blocks_needed):
-                block = attacker.blockchain.mine_pending_transactions(attacker.username)
-                if block:
-                    print(f"   ✓ Mined block #{len(attacker.blockchain.chain)-1} (+{config.MINING_REWARD} coins)")
-                    
-                    # Send new block to target to maintain consensus
-                    try:
-                        response = requests.post(
-                            f"{target_url}/block/new",
-                            json=block.to_dict(),
-                            timeout=2
-                        )
-                        if response.status_code == 200:
-                            print(f"      → Target accepted new block")
-                    except:
-                        pass
-            
-            # Update balance
-            attacker_balance = attacker.blockchain.get_total_balance(attacker.username)
-            confirmed, pending, total = attacker_balance
-            print(f"   ✓ New balance: {confirmed} coins")
-            print(f"   ✓ Consensus maintained: Target also has these blocks")
+        # Note: Blockchain already synced in Step 3
+        print(f"\n✅ Blockchain consensus already established")
+        print(f"   All nodes have identical blockchain")
+        print(f"   Transactions will work properly")
         
         # Transaction 1: Send X coins to TARGET
-        print(f"\n📤 Creating transaction: {attacker.username} → {target_username} (50 coins)")
+        print(f"\n📤 Creating transaction: {attacker.username} → {target_username} (10 coins)")
+        
+        # Debug: Check balances before transaction
+        print(f"\n🔍 Pre-transaction validation:")
+        attacker_balance_check = attacker.blockchain.get_total_balance(attacker.username)
+        print(f"   Attacker balance: {attacker_balance_check[0]} confirmed, {attacker_balance_check[1]} pending")
+        print(f"   Attacker chain length: {len(attacker.blockchain.chain)} blocks")
         
         try:
             tx1 = Transaction(
                 sender=attacker.username,
                 receiver=target_username,
-                amount=50
+                amount=10
             )
             
             # Add to attacker's blockchain
-            if attacker.blockchain.add_transaction(tx1):
+            try:
+                attacker.blockchain.add_transaction(tx1)
                 print(f"   ✓ Transaction created in attacker's chain")
-            else:
-                print(f"   ✗ Failed to create transaction")
+            except ValueError as e:
+                print(f"   ✗ Failed to create transaction in attacker's chain!")
+                print(f"   Error: {str(e)}")
                 return False
             
             # Broadcast to TARGET only (via HTTP)
             print(f"   📡 Broadcasting ONLY to target (isolated network)...")
+            
+            # Debug: Check target's view of attacker before sending
+            try:
+                target_info = requests.get(f"{target_url}/info", timeout=2).json()
+                print(f"   🔍 Target's blockchain: {target_info.get('chain_length', 0)} blocks")
+            except:
+                pass
+            
             response = requests.post(
                 f"{target_url}/transaction/new",
                 json=tx1.to_dict(),
@@ -515,9 +571,31 @@ class EclipseAttackDemo:
                 print(f"   ✓ Target received transaction")
                 print(f"   Response: {result.get('message', 'OK')}")
             else:
-                error_msg = response.json().get('error', 'Unknown error') if response.headers.get('content-type') == 'application/json' else response.text
+                # Try to get detailed error message
+                try:
+                    error_data = response.json()
+                    error_msg = error_data.get('error', 'Unknown error')
+                except:
+                    error_msg = response.text
+                
                 print(f"   ✗ Target rejected transaction!")
                 print(f"   HTTP {response.status_code}: {error_msg}")
+                
+                # Check if it's a balance issue
+                if 'balance' in error_msg.lower() or 'insufficient' in error_msg.lower():
+                    print(f"\n   💡 Debugging balance issue:")
+                    try:
+                        target_info = requests.get(f"{target_url}/info", timeout=2).json()
+                        print(f"      Target sees attacker balance: {target_info.get('balance', 'N/A')}")
+                        print(f"      Target chain length: {target_info.get('chain_length', 0)}")
+                        print(f"      Attacker chain length: {len(attacker.blockchain.chain)}")
+                        
+                        if target_info.get('chain_length', 0) != len(attacker.blockchain.chain):
+                            print(f"\n   ⚠️ CONSENSUS PROBLEM: Chains have different lengths!")
+                            print(f"      Need to resync blockchain...")
+                    except:
+                        pass
+                
                 print(f"\n⚠️ Attack cannot proceed - transaction validation failed!")
                 return False
             
@@ -556,7 +634,7 @@ class EclipseAttackDemo:
                 
                 if response.status_code == 200:
                     print(f"   ✓ Target accepted block!")
-                    print(f"   💰 Target now has +50 coins")
+                    print(f"   💰 Target now has +10 coins")
                 else:
                     print(f"   ✗ Target rejected block")
             except Exception as e:
@@ -602,8 +680,8 @@ class EclipseAttackDemo:
         recipient2 = self.malicious_nodes[1] if len(self.malicious_nodes) > 1 else self.malicious_nodes[0]
         
         print(f"\n📤 Creating DOUBLE-SPEND transaction:")
-        print(f"   {attacker.username} → {recipient2.username} (50 coins)")
-        print(f"   ⚠️ Using the SAME 50 coins already sent to {target_username}!")
+        print(f"   {attacker.username} → {recipient2.username} (10 coins)")
+        print(f"   ⚠️ Using the SAME 10 coins already sent to {target_username}!")
         
         # Create a NEW blockchain without tx1 (rollback)
         print(f"\n🔄 Creating alternative chain (without tx1)...")
@@ -614,7 +692,7 @@ class EclipseAttackDemo:
             tx2 = Transaction(
                 sender=attacker.username,
                 receiver=recipient2.username,
-                amount=50
+                amount=10
             )
             
             # Broadcast to LEGITIMATE nodes only (not target)
@@ -741,16 +819,16 @@ class EclipseAttackDemo:
         print("="*80)
         
         print(f"\n� What happened:")
-        print(f"   1. Attacker sent 50 coins to {target_username} (eclipse network)")
-        print(f"   2. Malicious nodes mined it → Target received +50 coins")
-        print(f"   3. Attacker sent SAME 50 coins to {recipient2.username} (legit network)")
+        print(f"   1. Attacker sent 10 coins to {target_username} (eclipse network)")
+        print(f"   2. Malicious nodes mined it → Target received +10 coins")
+        print(f"   3. Attacker sent SAME 10 coins to {recipient2.username} (legit network)")
         print(f"   4. Legitimate nodes mined it → Real chain has different tx")
         print(f"   5. Malicious nodes went offline → Target reconnected to legit network")
         print(f"   6. Target synced with longer legit chain → Original tx REVERTED!")
         
         print(f"\n💀 Impact:")
-        print(f"   ✓ {target_username} lost 50 coins (transaction reversed)")
-        print(f"   ✓ {recipient2.username} received 50 coins (on real chain)")
+        print(f"   ✓ {target_username} lost 10 coins (transaction reversed)")
+        print(f"   ✓ {recipient2.username} received 10 coins (on real chain)")
         print(f"   ✓ Same coins spent TWICE successfully!")
         
         print(f"\n🎯 Attack Summary:")
@@ -804,7 +882,7 @@ class EclipseAttackDemo:
         time.sleep(2)
         return True
         print(f"\n⚠️ DOUBLE-SPENDING SUCCESSFUL!")
-        print(f"   - Main network thinks target received 50 coins")
+        print(f"   - Main network thinks target received 10 coins")
         print(f"   - Target thinks coins went to {recipient2.username}")
         print(f"   - Target is isolated and sees different blockchain!")
         print(f"   - Once goods delivered, attacker can reveal real chain")

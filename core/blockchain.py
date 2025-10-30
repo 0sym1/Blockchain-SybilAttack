@@ -111,11 +111,12 @@ class Blockchain:
         # Lấy transaction đầu tiên (mỗi block chỉ chứa 1 transaction)
         transaction = self.pending_transactions.pop(0)
         
-        # Tạo block mới
+        # Tạo block mới với miner address
         new_block = Block(
             index=len(self.chain),
             transaction=transaction,
-            previous_hash=self.get_latest_block().hash
+            previous_hash=self.get_latest_block().hash,
+            miner=miner_address  # ✅ Set miner để nhận reward
         )
         
         print(f"Mining block {new_block.index}...")
@@ -124,22 +125,8 @@ class Blockchain:
         # Thêm block vào chain
         self.chain.append(new_block)
         
-        # ✅ FIX: Tạo mining reward transaction và MINE NGAY trong block tiếp theo
-        # Thay vì add vào pending (gây vòng lặp), ta sẽ tạo block reward riêng
-        # Nhưng để đơn giản, ta ADD vào pending nhưng CHỈ khi có transaction thật
-        # Reward chỉ được claim khi mine block có transaction của user
-        
-        # Chỉ thêm reward nếu transaction KHÔNG phải từ System (tránh reward cho reward)
-        if transaction.sender != "System" and transaction.sender != "Genesis":
-            reward_transaction = Transaction(
-                sender="System",
-                receiver=miner_address,
-                amount=self.mining_reward
-            )
-            self.pending_transactions.append(reward_transaction)
-            print(f"💰 Mining reward of {self.mining_reward} coins added to pending pool")
-        
         print(f"Block {new_block.index} mined successfully!")
+        print(f"💰 Miner {miner_address} will receive {self.mining_reward} coins reward")
         return new_block
     
     def is_chain_valid(self):
@@ -209,6 +196,11 @@ class Blockchain:
         
         # Duyệt qua tất cả blocks trong chain (chỉ confirmed transactions)
         for block in self.chain:
+            # ✅ Check mining reward
+            if block.miner == address:
+                balance += self.mining_reward
+            
+            # Check transaction
             if block.transaction:
                 if block.transaction.sender == address:
                     balance -= block.transaction.amount
@@ -304,6 +296,8 @@ class Blockchain:
             print(f"  Previous Hash: {block.previous_hash}")
             print(f"  Hash: {block.hash}")
             print(f"  Nonce: {block.nonce}")
+            if block.miner:
+                print(f"  ⛏️  Miner: {block.miner} (+{self.mining_reward} coins)")
             if block.transaction:
                 print(f"  Transaction: {block.transaction}")
         
